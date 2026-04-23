@@ -1356,10 +1356,11 @@ async function cropVideoToRatio(file, targetRatio, onProgress) {
   const { fetchFile } = FFmpegUtil;
   const ffmpeg = new FFmpeg();
   if (onProgress) ffmpeg.on('progress', ({ progress }) => onProgress(Math.round(progress * 100)));
+  const base = new URL('.', window.location.href).href;
   await ffmpeg.load({
-    coreURL: 'ffmpeg-core.js',
-    wasmURL: 'ffmpeg-core.wasm',
-    workerURL: 'ffmpeg-core.worker.js',
+    coreURL: base + 'ffmpeg-core.js',
+    wasmURL: base + 'ffmpeg-core.wasm',
+    workerURL: base + 'ffmpeg-core.worker.js',
   });
 
   await ffmpeg.writeFile('input.mp4', await fetchFile(file));
