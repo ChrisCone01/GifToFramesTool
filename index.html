@@ -685,11 +685,11 @@ function handleFileV(file) {
     // 计算最接近的安卓比例
     const videoRatio = video.videoWidth / video.videoHeight;
     const ratios = [
-      { name: '1比1', value: 1/1 },
-      { name: '16比9', value: 16/9 },
-      { name: '2比3', value: 2/3 },
-      { name: '3比2', value: 3/2 },
-      { name: '9比16', value: 9/16 }
+      { name: '1x1', value: 1/1 },
+      { name: '16x9', value: 16/9 },
+      { name: '2x3', value: 2/3 },
+      { name: '3x2', value: 3/2 },
+      { name: '9x16', value: 9/16 }
     ];
     let closestRatio = ratios[0];
     let minDiff = Math.abs(videoRatio - ratios[0].value);
@@ -1210,11 +1210,11 @@ btnDownloadTemplateV.addEventListener('click', async () => {
 
     // 定义可用比例及其数值
     const ratios = [
-      { name: '1比1', value: 1/1 },
-      { name: '16比9', value: 16/9 },
-      { name: '2比3', value: 2/3 },
-      { name: '3比2', value: 3/2 },
-      { name: '9比16', value: 9/16 }
+      { name: '1x1', value: 1/1 },
+      { name: '16x9', value: 16/9 },
+      { name: '2x3', value: 2/3 },
+      { name: '3x2', value: 3/2 },
+      { name: '9x16', value: 9/16 }
     ];
 
     // 找到最接近的比例
@@ -1235,7 +1235,7 @@ btnDownloadTemplateV.addEventListener('click', async () => {
     const tplBuf = await resp.arrayBuffer();
 
     // 加载安卓比例模板
-    const respAndroid = await fetch(encodeURIComponent(androidTemplateFile));
+    const respAndroid = await fetch(androidTemplateFile);
     if (!respAndroid.ok) throw new Error(`安卓模板包加载失败，请确认 ${androidTemplateFile} 在同目录下`);
     const androidTplBuf = await respAndroid.arrayBuffer();
 
