@@ -1281,12 +1281,14 @@ btnDownloadTemplateV.addEventListener('click', async () => {
     });
 
     // 从上传的 MP4 提取音频转 MP3，替换 ios/music/music.mp3
+    let mp3Blob;
     try {
-      const mp3Blob = await extractMp3FromVideo(currentFileV);
-      if (mp3Blob) zip.file(newIosPrefix + 'music/music.mp3', await mp3Blob.arrayBuffer());
+      mp3Blob = await extractMp3FromVideo(currentFileV);
     } catch(e) {
-      console.warn('视频无音频轨道，跳过音频提取', e);
+      console.warn('视频无音频轨道，生成静音MP3', e);
+      mp3Blob = generateSilentMp3(3);
     }
+    zip.file(newIosPrefix + 'music/music.mp3', await mp3Blob.arrayBuffer());
 
     // 打包 iOS zip
     const iosZip = new JSZip();
@@ -1378,6 +1380,23 @@ async function cropVideoToRatio(file, targetRatio, onProgress) {
   ]);
   const data = await ffmpeg.readFile('output.mp4');
   return new Blob([data.buffer], { type: 'video/mp4' });
+}
+
+// 生成指定秒数的静音 MP3 Blob
+function generateSilentMp3(durationSec) {
+  const sampleRate = 44100;
+  const samples = sampleRate * durationSec;
+  const enc = new lamejs.Mp3Encoder(1, sampleRate, 128);
+  const silent = new Int16Array(samples);
+  const mp3Data = [];
+  const block = 1152;
+  for (let i = 0; i < samples; i += block) {
+    const buf = enc.encodeBuffer(silent.subarray(i, i + block));
+    if (buf.length > 0) mp3Data.push(buf);
+  }
+  const end = enc.flush();
+  if (end.length > 0) mp3Data.push(end);
+  return new Blob(mp3Data, { type: 'audio/mp3' });
 }
 
 async function extractMp3FromVideo(file) {
