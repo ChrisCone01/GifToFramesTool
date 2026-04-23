@@ -1235,7 +1235,7 @@ btnDownloadTemplateV.addEventListener('click', async () => {
     const tplBuf = await resp.arrayBuffer();
 
     // 加载安卓比例模板
-    const respAndroid = await fetch(androidTemplateFile);
+    const respAndroid = await fetch(encodeURIComponent(androidTemplateFile));
     if (!respAndroid.ok) throw new Error(`安卓模板包加载失败，请确认 ${androidTemplateFile} 在同目录下`);
     const androidTplBuf = await respAndroid.arrayBuffer();
 
