@@ -1337,49 +1337,77 @@ btnDownloadTemplateV.addEventListener('click', async () => {
   }
 });
 
-// 居中裁切视频到目标宽高比，返回 MP4 Blob（ffmpeg.wasm）
+// 居中裁切视频到目标宽高比，返回 MP4 Blob（Canvas + MediaRecorder）
 async function cropVideoToRatio(file, targetRatio, onProgress) {
-  // 获取视频尺寸
-  const vw = await new Promise(resolve => {
-    const v = document.createElement('video');
-    v.src = URL.createObjectURL(file);
-    v.onloadedmetadata = () => { URL.revokeObjectURL(v.src); resolve({ w: v.videoWidth, h: v.videoHeight }); };
-  }).then(d => d);
-
-  let sw, sh;
-  if (vw.w / vw.h > targetRatio) {
-    sh = vw.h; sw = Math.round(vw.h * targetRatio);
-  } else {
-    sw = vw.w; sh = Math.round(vw.w / targetRatio);
-  }
-  // 确保偶数（libx264 要求）
-  sw = sw % 2 === 0 ? sw : sw - 1;
-  sh = sh % 2 === 0 ? sh : sh - 1;
-  const sx = Math.floor((vw.w - sw) / 2);
-  const sy = Math.floor((vw.h - sh) / 2);
-
-  const { FFmpeg } = FFmpegWASM;
-  const { fetchFile } = FFmpegUtil;
-  const ffmpeg = new FFmpeg();
-  if (onProgress) ffmpeg.on('progress', ({ progress }) => onProgress(Math.round(progress * 100)));
-  const base = new URL('.', window.location.href).href;
-  await ffmpeg.load({
-    coreURL: base + 'ffmpeg-core.js',
-    wasmURL: base + 'ffmpeg-core.wasm',
-    workerURL: base + 'ffmpeg-core.worker.js',
+  // 获取视频尺寸和时长
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.src = URL.createObjectURL(file);
+  await new Promise((resolve, reject) => {
+    video.onloadedmetadata = resolve;
+    video.onerror = reject;
   });
 
-  await ffmpeg.writeFile('input.mp4', await fetchFile(file));
-  await ffmpeg.exec([
-    '-i', 'input.mp4',
-    '-vf', `crop=${sw}:${sh}:${sx}:${sy}`,
-    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
-    '-c:a', 'aac',
-    '-movflags', '+faststart',
-    'output.mp4'
-  ]);
-  const data = await ffmpeg.readFile('output.mp4');
-  return new Blob([data.buffer], { type: 'video/mp4' });
+  const vw = video.videoWidth, vh = video.videoHeight;
+
+  // 计算裁切区域
+  let sw, sh;
+  if (vw / vh > targetRatio) {
+    sh = vh; sw = Math.round(vh * targetRatio);
+  } else {
+    sw = vw; sh = Math.round(vw / targetRatio);
+  }
+  sw = sw % 2 === 0 ? sw : sw - 1;
+  sh = sh % 2 === 0 ? sh : sh - 1;
+  const sx = Math.floor((vw - sw) / 2);
+  const sy = Math.floor((vh - sh) / 2);
+
+  // 创建 canvas 用于裁切绘制
+  const canvas = document.createElement('canvas');
+  canvas.width = sw;
+  canvas.height = sh;
+  const ctx = canvas.getContext('2d');
+
+  // 用 MediaRecorder 录制 canvas 输出
+  const stream = canvas.captureStream(30);
+  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9'
+    : MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ? 'video/webm;codecs=vp8'
+    : 'video/webm';
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5000000 });
+  const chunks = [];
+  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+
+  const duration = video.duration;
+
+  return new Promise((resolve, reject) => {
+    recorder.onstop = () => {
+      URL.revokeObjectURL(video.src);
+      resolve(new Blob(chunks, { type: mimeType }));
+    };
+    recorder.onerror = e => {
+      URL.revokeObjectURL(video.src);
+      reject(e);
+    };
+
+    recorder.start();
+
+    // 逐帧绘制
+    function drawFrame() {
+      if (video.ended || video.paused) {
+        recorder.stop();
+        return;
+      }
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+      if (onProgress && duration) {
+        onProgress(Math.round((video.currentTime / duration) * 100));
+      }
+      requestAnimationFrame(drawFrame);
+    }
+
+    video.onended = () => { recorder.stop(); };
+    video.play().then(() => { drawFrame(); }).catch(reject);
+  });
 }
 
 // 生成指定秒数的静音 MP3 Blob
