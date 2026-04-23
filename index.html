@@ -1281,8 +1281,12 @@ btnDownloadTemplateV.addEventListener('click', async () => {
     });
 
     // 从上传的 MP4 提取音频转 MP3，替换 ios/music/music.mp3
-    const mp3Blob = await extractMp3FromVideo(currentFileV);
-    zip.file(newIosPrefix + 'music/music.mp3', await mp3Blob.arrayBuffer());
+    try {
+      const mp3Blob = await extractMp3FromVideo(currentFileV);
+      if (mp3Blob) zip.file(newIosPrefix + 'music/music.mp3', await mp3Blob.arrayBuffer());
+    } catch(e) {
+      console.warn('视频无音频轨道，跳过音频提取', e);
+    }
 
     // 打包 iOS zip
     const iosZip = new JSZip();
