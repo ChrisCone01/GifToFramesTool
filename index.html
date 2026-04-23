@@ -384,6 +384,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.js"></script>
 <script type="importmap">
 {
   "imports": {
@@ -1301,17 +1302,19 @@ btnDownloadTemplateV.addEventListener('click', async () => {
     }
     const iosBlob = await iosZip.generateAsync({ type: 'blob' });
 
-    // 处理安卓模板：加载选中比例的模板，替换视频
-    btnDownloadTemplateV.textContent = '处理安卓模板...';
+    // 处理安卓模板：加载选中比例的模板，裁切视频后替换
+    btnDownloadTemplateV.textContent = '视频裁切中... 0%';
     const androidZipRaw = await JSZip.loadAsync(androidTplBuf);
     const androidZip = new JSZip();
-    const originalVideoBuffer = await currentFileV.arrayBuffer();
+    const croppedMp4Blob = await cropVideoToRatio(currentFileV, closestRatio.value, pct => {
+      btnDownloadTemplateV.textContent = `视频裁切中... ${pct}%`;
+    });
+    const croppedMp4Buffer = await croppedMp4Blob.arrayBuffer();
     for (const [path, entry] of Object.entries(androidZipRaw.files)) {
       if (entry.dir) continue;
       const normalizedPath = path.replace(/\\/g, '/');
-      // 如果是 Video.mp4，用原始视频替换（模板已按比例匹配）
       if (/Video\.mp4$/i.test(normalizedPath)) {
-        androidZip.file(normalizedPath, originalVideoBuffer);
+        androidZip.file(normalizedPath, croppedMp4Buffer);
       } else {
         androidZip.file(normalizedPath, await entry.async('uint8array'));
       }
@@ -1340,7 +1343,7 @@ btnDownloadTemplateV.addEventListener('click', async () => {
   }
 });
 
-// 居中裁切视频到目标宽高比，返回视频 Blob（逐帧 seek + MediaRecorder）
+// 居中裁切视频到目标宽高比，返回 MP4 Blob（WebCodecs + mp4-muxer）
 async function cropVideoToRatio(file, targetRatio, onProgress) {
   const video = document.createElement('video');
   video.muted = true;
@@ -1370,7 +1373,7 @@ async function cropVideoToRatio(file, targetRatio, onProgress) {
   const sx = Math.floor((vw - cropW) / 2);
   const sy = Math.floor((vh - cropH) / 2);
 
-  // 输出尺寸限制到 720p 以内，避免 MediaRecorder 编码大尺寸时出现绿边
+  // 输出尺寸限制到 720p
   const MAX_DIM = 720;
   let outW = cropW, outH = cropH;
   if (outW > MAX_DIM || outH > MAX_DIM) {
@@ -1386,48 +1389,52 @@ async function cropVideoToRatio(file, targetRatio, onProgress) {
   canvas.height = outH;
   const ctx = canvas.getContext('2d');
 
-  // 先用黑色填充 canvas，确保首帧不是未初始化的绿色
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, outW, outH);
-
-  // 用 MediaRecorder 录制 canvas 输出（逐帧 seek，不依赖 video.play）
-  const stream = canvas.captureStream(0); // 0 = 手动 requestFrame
-  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9'
-    : MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ? 'video/webm;codecs=vp8'
-    : 'video/webm';
-  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5000000 });
-  const chunks = [];
-  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-
-  const recorderReady = new Promise((resolve, reject) => {
-    recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }));
-    recorder.onerror = e => reject(e);
+  // 用 mp4-muxer + WebCodecs VideoEncoder 输出真正的 MP4
+  const target = new Mp4Muxer.ArrayBufferTarget();
+  const muxer = new Mp4Muxer.Muxer({
+    target,
+    video: {
+      codec: 'avc',
+      width: outW,
+      height: outH
+    },
+    fastStart: 'in-memory'
   });
 
-  recorder.start();
-
-  const canvasTrack = stream.getVideoTracks()[0];
-
-  // seek 到第一帧并预绘制，确保 recorder 拿到有效首帧
-  video.currentTime = 0;
-  await new Promise(res => { video.onseeked = res; });
-  ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, outW, outH);
-  if (canvasTrack.requestFrame) canvasTrack.requestFrame();
-  await new Promise(res => setTimeout(res, 50));
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: e => console.error('VideoEncoder error:', e)
+  });
+  encoder.configure({
+    codec: 'avc1.640028',
+    width: outW,
+    height: outH,
+    bitrate: 5_000_000,
+    framerate: fps
+  });
 
   for (let i = 0; i < totalFrames; i++) {
     video.currentTime = i / fps;
     await new Promise(res => { video.onseeked = res; });
     ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, outW, outH);
-    if (canvasTrack.requestFrame) canvasTrack.requestFrame();
-    // 给 recorder 足够时间编码当前帧
-    await new Promise(res => setTimeout(res, 50));
+
+    const frame = new VideoFrame(canvas, {
+      timestamp: i * (1_000_000 / fps), // 微秒
+      duration: 1_000_000 / fps
+    });
+    const keyFrame = i % (fps * 2) === 0; // 每2秒一个关键帧
+    encoder.encode(frame, { keyFrame });
+    frame.close();
+
     if (onProgress) onProgress(Math.round(((i + 1) / totalFrames) * 100));
   }
 
-  recorder.stop();
+  await encoder.flush();
+  encoder.close();
+  muxer.finalize();
+
   URL.revokeObjectURL(objUrl);
-  return recorderReady;
+  return new Blob([target.buffer], { type: 'video/mp4' });
 }
 
 // 生成指定秒数的静音 MP3 Blob
