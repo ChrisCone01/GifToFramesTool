@@ -1,0 +1,1670 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>序列帧提取工具</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f8f9fb;
+    min-height: 100vh;
+    color: #1a1a2e;
+  }
+
+  /* Background blobs */
+  .bg-blobs {
+    position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0;
+  }
+  .blob {
+    position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.35;
+  }
+  .blob-1 { width: 500px; height: 500px; background: radial-gradient(circle, #a8ff78, #78d5ff); top: -100px; left: -100px; }
+  .blob-2 { width: 400px; height: 400px; background: radial-gradient(circle, #c78fff, #78d5ff); top: 200px; right: -80px; }
+  .blob-3 { width: 350px; height: 350px; background: radial-gradient(circle, #a8ff78, #c78fff); bottom: -80px; left: 30%; }
+
+  .container {
+    position: relative; z-index: 1;
+    max-width: 860px; margin: 0 auto; padding: 48px 24px;
+  }
+
+  /* Header */
+  .header { text-align: center; margin-bottom: 48px; }
+  .badge {
+    display: inline-block; padding: 4px 14px; border-radius: 999px;
+    background: linear-gradient(135deg, #6C6C6C, #000000);
+    font-size: 12px; font-weight: 600; color: #1a1a2e; margin-bottom: 16px;
+  }
+  .header h1 { font-size: 42px; font-weight: 800; line-height: 1.15; margin-bottom: 12px; }
+  .header h1 span {
+    background: linear-gradient(135deg, #6C6C6C, #000000);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .header p { color: #64748b; font-size: 16px; }
+
+  /* Card */
+  .card {
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.9);
+    border-radius: 20px;
+    padding: 32px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-size: 13px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #94a3b8; margin-bottom: 20px;
+  }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 2px dashed #cbd5e1; border-radius: 14px;
+    padding: 48px 24px; text-align: center; cursor: pointer;
+    transition: all 0.2s; background: rgba(248,250,252,0.6);
+  }
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: #22c55e; background: rgba(34,197,94,0.04);
+  }
+  .upload-icon { font-size: 40px; margin-bottom: 12px; }
+  .upload-zone h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .upload-zone p { color: #94a3b8; font-size: 13px; }
+
+  /* Settings grid */
+  .settings-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .field label {
+    display: block; font-size: 12px; font-weight: 600;
+    color: #64748b; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .field input, .field select {
+    width: 100%; padding: 10px 14px; border-radius: 10px;
+    border: 1.5px solid #e2e8f0; background: #fff;
+    font-size: 14px; color: #1a1a2e; outline: none;
+    transition: border-color 0.2s;
+  }
+  .field input:focus, .field select:focus { border-color: #22c55e; }
+  .field-hint { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+
+  /* Checkbox row */
+  .checkbox-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-radius: 10px;
+    background: rgba(34,197,94,0.06); border: 1.5px solid rgba(34,197,94,0.15);
+    cursor: pointer; user-select: none;
+  }
+  .checkbox-row input[type=checkbox] { width: 16px; height: 16px; accent-color: #22c55e; cursor: pointer; }
+  .checkbox-row span { font-size: 13px; font-weight: 500; color: #374151; }
+
+  /* Preview */
+  .preview-wrap { text-align: center; }
+  .preview-wrap img, .preview-wrap video {
+    max-width: 100%; max-height: 240px; border-radius: 10px;
+    border: 1px solid #e2e8f0;
+  }
+  .file-info {
+    display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; justify-content: center;
+  }
+  .tag {
+    padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    background: #f1f5f9; color: #475569;
+  }
+  .tag.green { background: rgba(34,197,94,0.12); color: #16a34a; }
+
+  /* Button */
+  .btn-extract {
+    width: 100%; padding: 16px; border-radius: 14px; border: none; cursor: pointer;
+    font-size: 16px; font-weight: 700; letter-spacing: 0.02em;
+    background: linear-gradient(135deg, #6C6C6C, #000000);
+    color: #fff; transition: opacity 0.2s, transform 0.1s;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  }
+  .btn-extract:hover { opacity: 0.92; transform: translateY(-1px); }
+  .btn-extract:active { transform: translateY(0); }
+  .btn-extract:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  /* Progress */
+  .progress-wrap { margin-top: 16px; display: none; }
+  .progress-bar-bg {
+    height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%; width: 0%; border-radius: 999px;
+    background: linear-gradient(90deg, #6C6C6C, #000000);
+    transition: width 0.15s;
+  }
+  .progress-text { font-size: 13px; color: #64748b; margin-top: 8px; text-align: center; }
+
+  /* Results */
+  .results-section { display: none; }
+  .results-header {
+    display: flex; align-items: center; margin-bottom: 16px;
+    flex-wrap: wrap; gap: 8px;
+  }
+  .results-header h3 { font-size: 16px; font-weight: 700; margin-right: auto; }
+  .btn-download-all {
+    padding: 8px 20px; border-radius: 999px; border: none; cursor: pointer;
+    background: linear-gradient(135deg, #6C6C6C, #000000);
+    color: #fff; font-size: 13px; font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    transition: opacity 0.2s;
+  }
+  .btn-download-all:hover { opacity: 0.88; }
+
+  .frames-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px;
+    max-height: 420px; overflow-y: auto; padding-right: 4px;
+  }
+  .frame-item {
+    border-radius: 10px; overflow: hidden; border: 1.5px solid #e2e8f0;
+    background: #f8fafc; cursor: pointer; transition: border-color 0.15s, transform 0.15s;
+    position: relative;
+  }
+  .frame-item:hover { border-color: #000000; transform: scale(1.03); }
+  .frame-item img { width: 100%; display: block; }
+  .frame-num {
+    position: absolute; bottom: 4px; right: 6px;
+    font-size: 10px; font-weight: 700; color: #fff;
+    background: rgba(0,0,0,0.45); padding: 1px 5px; border-radius: 4px;
+  }
+
+  @media (max-width: 600px) {
+    .settings-grid { grid-template-columns: 1fr 1fr; }
+    .header h1 { font-size: 28px; }
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex; gap: 8px; margin-bottom: 24px;
+    background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.9); border-radius: 14px;
+    padding: 6px;
+  }
+  .tab-btn {
+    flex: 1; padding: 10px 16px; border-radius: 10px; border: none; cursor: pointer;
+    font-size: 14px; font-weight: 600; color: #64748b;
+    background: transparent; transition: all 0.2s;
+  }
+  .tab-btn.active {
+    background: linear-gradient(135deg, #6C6C6C, #000000);
+    color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .tab-btn:not(.active):hover { background: #f1f5f9; color: #1a1a2e; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+</style>
+</head>
+<body>
+<div class="bg-blobs">
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+</div>
+
+<div class="container">
+  <div class="header">
+    <h1>AR<span>自动化</span></h1>
+    <p>上传一个素材即可一键下载配置压缩包</p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('gif')">🎞 图片</button>
+    <button class="tab-btn" onclick="switchTab('video')">🎬 视频</button>
+    <button class="tab-btn" onclick="switchTab('model')" style="display:none;">🧊 3D 模型</button>
+  </div>
+
+  <!-- Tab: GIF / 视频 (共用现有功能) -->
+  <div class="tab-panel active" id="tab-gif">
+
+  <!-- Upload -->
+  <div class="card">
+    <div class="card-title">上传文件</div>
+    <div class="upload-zone" id="uploadZone">
+      <div class="upload-icon">🎞️</div>
+      <h3>拖拽文件到此处，或点击选择</h3>
+      <p>支持 GIF 动图 · PNG · JPG 静态图</p>
+    </div>
+    <input type="file" id="fileInput" accept=".gif,.png,.jpg,.jpeg,image/gif,image/png,image/jpeg" style="display:none;">
+    <div class="preview-wrap" id="previewWrap" style="display:none; margin-top:20px;"></div>
+    <div style="margin-top:16px;">
+      <label style="font-size:12px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:8px;">音乐文件（可选，仅支持 MP3）</label>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <label style="padding:8px 18px;border-radius:10px;border:1.5px dashed #cbd5e1;cursor:pointer;font-size:13px;color:#64748b;background:#f8fafc;transition:all 0.2s;" id="musicLabel">
+          🎵 选择 MP3 文件
+          <input type="file" id="musicInput" accept=".mp3,audio/mpeg" style="display:none;">
+        </label>
+        <span id="musicName" style="font-size:13px;color:#64748b;"></span>
+        <button id="musicClear" style="display:none;padding:4px 10px;border-radius:6px;border:none;background:#fee2e2;color:#dc2626;font-size:12px;cursor:pointer;">✕ 移除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="card">
+    <div class="card-title">输出设置</div>
+    <div class="settings-grid">
+      <div class="field">
+        <label>输出宽度 (px)</label>
+        <input type="number" id="outWidth" placeholder="原始宽度" min="1" max="4096">
+        <div class="field-hint">留空 = 原始尺寸</div>
+      </div>
+      <div class="field">
+        <label>输出高度 (px)</label>
+        <input type="number" id="outHeight" placeholder="原始高度" min="1" max="4096">
+        <div class="field-hint">留空 = 原始尺寸</div>
+      </div>
+      <div class="field">
+        <label>背景颜色</label>
+        <input type="color" id="bgColor" value="#ffffff" style="height:42px; padding:4px 8px; cursor:pointer;">
+        <div class="field-hint">透明区域填充色</div>
+      </div>
+    </div>
+    <div style="margin-top:16px;">
+      <label class="checkbox-row">
+        <input type="checkbox" id="keepRatio" checked>
+        <span>等比缩放居中（无损防裁切）— 原图比例与目标不一致时自动加边</span>
+      </label>
+    </div>
+    <div class="field" style="margin-top:16px;">
+      <label>输出帧率 (fps)</label>
+      <input type="number" id="videoFps" value="24" min="1" max="120">
+      <div class="field-hint">GIF 会按此帧率插帧或抽帧</div>
+    </div>
+  </div>
+
+  <!-- Extract button -->
+  <div class="card">
+    <button class="btn-extract" id="btnExtract" disabled>选择文件后开始提取</button>
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText">准备中...</div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="card results-section" id="resultsSection">
+    <div class="results-header">
+      <h3 id="resultsTitle">提取完成</h3>
+      <button class="btn-download-all" id="btnDownloadAll" style="display:none;">⬇ 打包下载全部序列帧</button>
+      <button class="btn-download-all" id="btnDownloadTemplate" style="background:linear-gradient(135deg,#6C6C6C,#000000);">📦 下载替换后的模板包</button>
+    </div>
+    <div class="frames-grid" id="framesGrid"></div>
+  </div>
+
+  </div><!-- /tab-gif -->
+
+  <!-- Tab: 视频 -->
+  <div class="tab-panel" id="tab-video">
+
+  <!-- Upload -->
+  <div class="card">
+    <div class="card-title">上传文件</div>
+    <div class="upload-zone" id="uploadZoneV">
+      <div class="upload-icon">🎬</div>
+      <h3>拖拽文件到此处，或点击选择</h3>
+      <p>支持 MP4 视频</p>
+    </div>
+    <input type="file" id="fileInputV" accept=".mp4,video/mp4" style="display:none;">
+    <div class="preview-wrap" id="previewWrapV" style="display:none; margin-top:20px;"></div>
+  </div>
+
+  <!-- Settings -->
+  <div class="card">
+    <div class="card-title">输出设置</div>
+    <div class="settings-grid">
+      <div class="field">
+        <label>输出宽度 (px)</label>
+        <input type="number" id="outWidthV" placeholder="原始宽度" min="1" max="4096">
+      </div>
+      <div class="field">
+        <label>输出高度 (px)</label>
+        <input type="number" id="outHeightV" placeholder="原始高度" min="1" max="4096">
+      </div>
+      <div class="field">
+        <label>背景颜色</label>
+        <input type="color" id="bgColorV" value="#ffffff" style="height:42px; padding:4px 8px; cursor:pointer;">
+        <div class="field-hint">透明区域填充色</div>
+      </div>
+    </div>
+    <div style="margin-top:16px;">
+      <label class="checkbox-row">
+        <input type="checkbox" id="keepRatioV" checked>
+        <span>等比缩放居中（无损防裁切）</span>
+      </label>
+    </div>
+    <div class="field" style="margin-top:16px;">
+      <label>输出帧率 (fps)</label>
+      <input type="number" id="videoFpsV" value="24" min="1" max="60">
+      <div class="field-hint">按此帧率提取视频帧</div>
+    </div>
+  </div>
+
+  <!-- Extract button -->
+  <div class="card">
+    <button class="btn-extract" id="btnExtractV" disabled>选择文件后开始提取</button>
+    <div class="progress-wrap" id="progressWrapV">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFillV"></div></div>
+      <div class="progress-text" id="progressTextV">准备中...</div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="card results-section" id="resultsSectionV">
+    <div class="results-header">
+      <h3 id="resultsTitleV">提取完成</h3>
+      <button class="btn-download-all" id="btnDownloadAllV" style="display:none;">⬇ 打包下载全部</button>
+      <button class="btn-download-all" id="btnDownloadMp3" style="display:none; background:linear-gradient(135deg,#6C6C6C,#000000);">🎵 下载 MP3 音频</button>
+      <button class="btn-download-all" id="btnDownloadTemplateV" style="display:none; background:linear-gradient(135deg,#6C6C6C,#000000);">📦 下载替换后的模板包</button>
+    </div>
+    <div class="frames-grid" id="framesGridV"></div>
+  </div>
+
+  </div><!-- /tab-video -->
+
+  <!-- Tab: 3D 模型 -->
+  <div class="tab-panel" id="tab-model">
+    <div class="card">
+      <div class="card-title">上传 3D 模型</div>
+      <div class="upload-zone" id="uploadZoneM">
+        <div class="upload-icon">🧊</div>
+        <h3>拖拽文件到此处，或点击选择</h3>
+        <p>支持 GLB · DAE 格式（可同时选贴图，或打包成 ZIP 上传）</p>
+      </div>
+      <input type="file" id="fileInputM" accept=".glb,.dae,.png,.jpg,.jpeg,.webp,.zip" multiple style="display:none;">
+    </div>
+    <div class="card" id="modelViewerCard" style="display:none;">
+      <div id="modelCanvas" style="width:100%;height:480px;border-radius:12px;overflow:hidden;background:#1a1a2e;"></div>
+      <div style="text-align:center;margin-top:12px;color:#64748b;font-size:13px;">模型匀速 360° 旋转中</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
+<script src="/ffmpeg.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script>
+// ─── Minimal GIF Parser (no external deps) ───────────────────────────────────
+function parseGifFrames(buf) {
+  const data = new Uint8Array(buf);
+  let pos = 0;
+  const read = n => { const s = pos; pos += n; return data.slice(s, pos); };
+  const readU8 = () => data[pos++];
+  const readU16 = () => { const v = data[pos] | (data[pos+1]<<8); pos+=2; return v; };
+
+  // Header
+  pos = 6;
+  const canvasW = readU16(), canvasH = readU16();
+  const packed = readU8();
+  const hasGCT = (packed >> 7) & 1;
+  const gctSize = 3 * (2 ** ((packed & 0x7) + 1));
+  readU8(); readU8(); // bg, aspect
+  const gct = hasGCT ? read(gctSize) : null;
+
+  const frames = [];
+  let gcExt = null;
+
+  while (pos < data.length) {
+    const sentinel = readU8();
+    if (sentinel === 0x3B) break; // trailer
+
+    if (sentinel === 0x21) { // extension
+      const label = readU8();
+      if (label === 0xF9) { // graphic control
+        readU8(); // block size = 4
+        const p = readU8();
+        const delay = readU16();
+        const transIdx = readU8();
+        readU8(); // terminator
+        gcExt = { disposalMethod: (p >> 3) & 0x7, hasTransparency: p & 1, transIdx, delay };
+      } else {
+        // skip sub-blocks
+        let sz; while ((sz = readU8()) !== 0) pos += sz;
+      }
+      continue;
+    }
+
+    if (sentinel === 0x2C) { // image descriptor
+      const left = readU16(), top = readU16(), w = readU16(), h = readU16();
+      const p2 = readU8();
+      const hasLCT = (p2 >> 7) & 1;
+      const interlaced = (p2 >> 6) & 1;
+      const lctSize = hasLCT ? 3 * (2 ** ((p2 & 0x7) + 1)) : 0;
+      const lct = hasLCT ? read(lctSize) : null;
+      const ct = lct || gct;
+
+      const minCode = readU8();
+      // collect LZW data
+      const lzwData = [];
+      let sz; while ((sz = readU8()) !== 0) { for (let i=0;i<sz;i++) lzwData.push(data[pos++]); }
+
+      const indices = lzwDecode(new Uint8Array(lzwData), minCode);
+      const pixels = new Uint8ClampedArray(w * h * 4);
+      const transIdx = gcExt?.hasTransparency ? gcExt.transIdx : -1;
+
+      // 处理隔行扫描：重新排列像素行
+      const deinterlaced = interlaced ? new Array(indices.length) : indices;
+      if (interlaced) {
+        const passes = [
+          { start: 0, step: 8 },
+          { start: 4, step: 8 },
+          { start: 2, step: 4 },
+          { start: 1, step: 2 }
+        ];
+        let srcRow = 0;
+        for (const { start, step } of passes) {
+          for (let destRow = start; destRow < h; destRow += step) {
+            for (let x = 0; x < w; x++) {
+              deinterlaced[destRow * w + x] = indices[srcRow * w + x];
+            }
+            srcRow++;
+          }
+        }
+      }
+
+      for (let i = 0; i < deinterlaced.length; i++) {
+        const idx = deinterlaced[i];
+        if (idx === transIdx) { pixels[i*4+3] = 0; continue; }
+        const ci = idx * 3;
+        pixels[i*4]   = ct[ci];
+        pixels[i*4+1] = ct[ci+1];
+        pixels[i*4+2] = ct[ci+2];
+        pixels[i*4+3] = 255;
+      }
+
+      frames.push({
+        left, top, width: w, height: h,
+        pixels,
+        disposalMethod: gcExt?.disposalMethod ?? 0,
+        delay: gcExt?.delay ?? 10,
+        canvasWidth: canvasW, canvasHeight: canvasH
+      });
+      gcExt = null;
+      continue;
+    }
+    // unknown byte — skip
+    break;
+  }
+  return frames;
+}
+
+function lzwDecode(data, minCodeSize) {
+  const clearCode = 1 << minCodeSize;
+  const eoi = clearCode + 1;
+  let codeSize = minCodeSize + 1;
+  let dict = [];
+  const reset = () => {
+    dict = [];
+    for (let i = 0; i < clearCode; i++) dict.push([i]);
+    dict.push([]); dict.push([]); // clear, eoi
+    codeSize = minCodeSize + 1;
+  };
+  reset();
+
+  const out = [];
+  let buf = 0, bits = 0, pos = 0;
+  let prev = null;
+
+  const readCode = () => {
+    while (bits < codeSize && pos < data.length) { buf |= data[pos++] << bits; bits += 8; }
+    const code = buf & ((1 << codeSize) - 1);
+    buf >>= codeSize; bits -= codeSize;
+    return code;
+  };
+
+  while (true) {
+    const code = readCode();
+    if (code === eoi || pos > data.length + 2) break;
+    if (code === clearCode) { reset(); prev = null; continue; }
+
+    let entry;
+    if (code < dict.length) {
+      entry = dict[code];
+    } else if (code === dict.length && prev !== null) {
+      entry = [...prev, prev[0]];
+    } else break;
+
+    for (const v of entry) out.push(v);
+    if (prev !== null) {
+      dict.push([...prev, entry[0]]);
+      if (dict.length === (1 << codeSize) && codeSize < 12) codeSize++;
+    }
+    prev = entry;
+  }
+  return out;
+}
+</script>
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let currentFile = null;
+let extractedFrames = [];
+let currentFileV = null;
+let extractedFramesV = [];
+let targetAndroidRatio = null; // 存储安卓目标比例
+
+// ─── DOM refs ────────────────────────────────────────────────────────────────
+const uploadZone = document.getElementById('uploadZone');
+const fileInput  = document.getElementById('fileInput');
+const previewWrap = document.getElementById('previewWrap');
+const btnExtract = document.getElementById('btnExtract');
+const progressWrap = document.getElementById('progressWrap');
+const progressFill = document.getElementById('progressFill');
+const progressText = document.getElementById('progressText');
+const resultsSection = document.getElementById('resultsSection');
+const framesGrid = document.getElementById('framesGrid');
+const resultsTitle = document.getElementById('resultsTitle');
+const btnDownloadAll = document.getElementById('btnDownloadAll');
+
+// Video tab DOM refs
+const uploadZoneV = document.getElementById('uploadZoneV');
+const fileInputV  = document.getElementById('fileInputV');
+const previewWrapV = document.getElementById('previewWrapV');
+const btnExtractV = document.getElementById('btnExtractV');
+const progressWrapV = document.getElementById('progressWrapV');
+const progressFillV = document.getElementById('progressFillV');
+const progressTextV = document.getElementById('progressTextV');
+const resultsSectionV = document.getElementById('resultsSectionV');
+const framesGridV = document.getElementById('framesGridV');
+const resultsTitleV = document.getElementById('resultsTitleV');
+const btnDownloadAllV = document.getElementById('btnDownloadAllV');
+const btnDownloadMp3 = document.getElementById('btnDownloadMp3');
+const btnDownloadTemplateV = document.getElementById('btnDownloadTemplateV');
+
+// ─── Upload handling ──────────────────────────────────────────────────────────
+uploadZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault(); uploadZone.classList.remove('drag-over');
+  handleFile(e.dataTransfer.files[0]);
+});
+
+function handleFile(file) {
+  if (!file) return;
+  const isGif = file.type === 'image/gif' || file.name.endsWith('.gif');
+  const isImage = file.type.startsWith('image/') || /\.(png|jpe?g)$/i.test(file.name);
+  if (!isGif && !isImage) { alert('请选择 GIF、PNG 或 JPG 文件'); return; }
+
+  currentFile = file;
+  extractedFrames = [];
+  resultsSection.style.display = 'none';
+  framesGrid.innerHTML = '';
+
+  previewWrap.style.display = 'block';
+  const url = URL.createObjectURL(file);
+
+  const widthInput = document.getElementById('outWidth');
+  const heightInput = document.getElementById('outHeight');
+  widthInput.value = 500; heightInput.value = 500;
+  widthInput.readOnly = true; heightInput.readOnly = true;
+  widthInput.style.backgroundColor = '#f1f5f9'; heightInput.style.backgroundColor = '#f1f5f9';
+  widthInput.style.color = '#94a3b8'; heightInput.style.color = '#94a3b8';
+
+  const fileExt = isGif ? 'GIF' : file.name.split('.').pop().toUpperCase();
+  previewWrap.innerHTML = `<img src="${url}"><div class="file-info">
+    <span class="tag green">${fileExt}</span>
+    <span class="tag">${file.name}</span>
+    <span class="tag">${(file.size/1024).toFixed(1)} KB</span>
+    ${isGif ? '<span class="tag" id="gifFpsTag">解析帧率中...</span>' : ''}
+  </div>`;
+  btnExtract.disabled = false;
+  btnExtract.textContent = isGif ? '🎞 提取 GIF 序列帧' : '🎞 提取静态图';
+
+  const fpsInput = document.getElementById('videoFps');
+  fpsInput.value = 24;
+  fpsInput.readOnly = true;
+  fpsInput.style.backgroundColor = '#f1f5f9';
+  fpsInput.style.color = '#94a3b8';
+  if (isGif) {
+    file.arrayBuffer().then(buf => {
+      try {
+        const frames = parseGifFrames(buf);
+        if (frames.length > 0) {
+          const totalMs = frames.reduce((s, f) => s + (f.delay || 10) * 10, 0);
+          const fps = parseFloat((frames.length / (totalMs / 1000)).toFixed(2));
+          const tag = document.getElementById('gifFpsTag');
+          if (tag) tag.textContent = `原始 ${frames.length} 帧 · ${fps} fps`;
+        }
+      } catch(e) { /* ignore */ }
+    });
+  }
+}
+
+// ─── Video Tab Upload ─────────────────────────────────────────────────────────
+uploadZoneV.addEventListener('click', () => fileInputV.click());
+fileInputV.addEventListener('change', e => handleFileV(e.target.files[0]));
+uploadZoneV.addEventListener('dragover', e => { e.preventDefault(); uploadZoneV.classList.add('drag-over'); });
+uploadZoneV.addEventListener('dragleave', () => uploadZoneV.classList.remove('drag-over'));
+uploadZoneV.addEventListener('drop', e => {
+  e.preventDefault(); uploadZoneV.classList.remove('drag-over');
+  handleFileV(e.dataTransfer.files[0]);
+});
+
+function handleFileV(file) {
+  if (!file) return;
+  if (!(file.type === 'video/mp4' || file.name.endsWith('.mp4'))) { alert('请选择 MP4 文件'); return; }
+
+  currentFileV = file;
+  extractedFramesV = [];
+  resultsSectionV.style.display = 'none';
+  framesGridV.innerHTML = '';
+
+  previewWrapV.style.display = 'block';
+  const url = URL.createObjectURL(file);
+
+  // 帧率输入框锁定
+  const fpsInputV = document.getElementById('videoFpsV');
+  fpsInputV.readOnly = true;
+  fpsInputV.style.backgroundColor = '#f1f5f9';
+  fpsInputV.style.color = '#94a3b8';
+
+  const wInput = document.getElementById('outWidthV');
+  const hInput = document.getElementById('outHeightV');
+  wInput.readOnly = true; hInput.readOnly = true;
+  wInput.style.backgroundColor = '#f1f5f9'; hInput.style.backgroundColor = '#f1f5f9';
+  wInput.style.color = '#94a3b8'; hInput.style.color = '#94a3b8';
+
+  const video = document.createElement('video');
+  video.src = url; video.muted = true; video.preload = 'metadata';
+  video.onloadedmetadata = () => {
+    wInput.value = 500; hInput.value = 500;
+
+    // 计算最接近的安卓比例
+    const videoRatio = video.videoWidth / video.videoHeight;
+    const ratios = [
+      { name: '1比1', value: 1/1 },
+      { name: '16比9', value: 16/9 },
+      { name: '2比3', value: 2/3 },
+      { name: '3比2', value: 3/2 },
+      { name: '9比16', value: 9/16 }
+    ];
+    let closestRatio = ratios[0];
+    let minDiff = Math.abs(videoRatio - ratios[0].value);
+    for (let i = 1; i < ratios.length; i++) {
+      const diff = Math.abs(videoRatio - ratios[i].value);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestRatio = ratios[i];
+      }
+    }
+    targetAndroidRatio = closestRatio.value;
+
+    // 预估输出大小：帧数 × 500×500×4 bytes
+    const fpsInput = document.getElementById('videoFpsV');
+    const fps = parseFloat(fpsInput.value) || 24;
+    const estimatedFrames = Math.floor(video.duration * fps);
+    const estimatedMB = (estimatedFrames * 500 * 500 * 4) / 1024 / 1024;
+    if (estimatedMB > 20) {
+      fpsInput.value = 16;
+    }
+  };
+
+  previewWrapV.innerHTML = `<video src="${url}" controls muted style="max-width:100%;max-height:240px;border-radius:10px;"></video>
+  <div class="file-info">
+    <span class="tag green">MP4</span>
+    <span class="tag">${file.name}</span>
+    <span class="tag">${(file.size/1024/1024).toFixed(2)} MB</span>
+  </div>`;
+  btnExtractV.disabled = false;
+  btnExtractV.textContent = '🎬 提取 MP4 序列帧';
+}
+
+// ─── Extract ──────────────────────────────────────────────────────────────────
+btnExtract.addEventListener('click', async () => {
+  if (!currentFile) return;
+  btnExtract.disabled = true;
+  progressWrap.style.display = 'block';
+  setProgress(0, '准备中...');
+  extractedFrames = [];
+  framesGrid.innerHTML = '';
+  resultsSection.style.display = 'none';
+
+  try {
+    const isGif = currentFile.type === 'image/gif' || currentFile.name.endsWith('.gif');
+    if (isGif) {
+      await extractGif();
+    } else {
+      await extractStaticImage();
+    }
+    showResults();
+  } catch(e) {
+    alert('提取失败：' + e.message);
+    console.error(e);
+  } finally {
+    btnExtract.disabled = false;
+  }
+});
+
+// ─── Output canvas helper ─────────────────────────────────────────────────────
+function makeOutputCanvas(srcW, srcH, transparent = false) {
+  const tw = parseInt(document.getElementById('outWidth').value) || srcW;
+  const th = parseInt(document.getElementById('outHeight').value) || srcH;
+  const keepRatio = document.getElementById('keepRatio').checked;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = tw; canvas.height = th;
+  const ctx = canvas.getContext('2d');
+  if (!transparent) {
+    ctx.fillStyle = document.getElementById('bgColor').value;
+    ctx.fillRect(0, 0, tw, th);
+  }
+
+  let dx = 0, dy = 0, dw = tw, dh = th;
+  if (keepRatio) {
+    const scale = Math.min(tw / srcW, th / srcH);
+    dw = srcW * scale; dh = srcH * scale;
+    dx = (tw - dw) / 2; dy = (th - dh) / 2;
+  }
+  return { canvas, ctx, dx, dy, dw, dh };
+}
+
+// ─── Static image extraction ──────────────────────────────────────────────────
+async function extractStaticImage() {
+  setProgress(5, '读取图片...');
+  const url = URL.createObjectURL(currentFile);
+  const img = new Image();
+  img.src = url;
+  await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('图片加载失败')); });
+
+  setProgress(50, '处理中...');
+  const canvas = document.createElement('canvas');
+  canvas.width = 500; canvas.height = 500;
+  const ctx = canvas.getContext('2d');
+  const scale = Math.min(500 / img.width, 500 / img.height);
+  const dw = img.width * scale;
+  const dh = img.height * scale;
+  const dx = (500 - dw) / 2;
+  const dy = (500 - dh) / 2;
+  ctx.drawImage(img, dx, dy, dw, dh);
+  URL.revokeObjectURL(url);
+
+  extractedFrames.push({ dataUrl: canvas.toDataURL('image/png'), name: 'gif_00001.png' });
+  setProgress(100, '完成！共 1 帧');
+}
+
+// ─── GIF extraction ───────────────────────────────────────────────────────────
+async function extractGif() {
+  setProgress(5, '读取 GIF 文件...');
+  const buf = await currentFile.arrayBuffer();
+
+  setProgress(15, '解析 GIF 帧...');
+  const frames = parseGifFrames(buf);
+  if (!frames.length) throw new Error('未找到帧数据');
+
+  const gifW = frames[0].canvasWidth;
+  const gifH = frames[0].canvasHeight;
+  const targetFps = (() => {
+    const v = parseFloat(document.getElementById('videoFps').value);
+    if (v && v > 0) return Math.max(1, v);
+    // fallback: 从帧数据计算
+    const totalMs = frames.reduce((s, f) => s + (f.delay || 10) * 10, 0);
+    return Math.max(1, parseFloat((frames.length / (totalMs / 1000)).toFixed(2)));
+  })();
+
+  // Build composited canvases for each original frame
+  const compCanvas = document.createElement('canvas');
+  compCanvas.width = gifW; compCanvas.height = gifH;
+  const compCtx = compCanvas.getContext('2d');
+  const composited = []; // { canvas, durationMs }
+
+  for (const f of frames) {
+    // 在绘制当前帧之前，保存画布状态（用于 disposal method 3 恢复）
+    const beforeDraw = compCtx.getImageData(0, 0, gifW, gifH);
+
+    // 绘制前强制清除画布，防止帧叠加
+    compCtx.clearRect(0, 0, gifW, gifH);
+
+    // 绘制当前帧
+    const patch = document.createElement('canvas');
+    patch.width = f.width; patch.height = f.height;
+    patch.getContext('2d').putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0);
+    compCtx.drawImage(patch, f.left, f.top);
+
+    // 保存当前合成结果的快照（这是最终输出的帧）
+    const snap = document.createElement('canvas');
+    snap.width = gifW; snap.height = gifH;
+    snap.getContext('2d').drawImage(compCanvas, 0, 0);
+    composited.push({ canvas: snap, durationMs: (f.delay || 10) * 10 });
+
+    // 当前帧显示后，根据 disposal method 处理画布，为下一帧做准备
+    if (f.disposalMethod === 3) {
+      // 恢复到绘制前的状态
+      compCtx.putImageData(beforeDraw, 0, 0);
+    } else {
+      // disposal 0/1/2: 清除整个画布（避免帧叠加重影）
+      compCtx.clearRect(0, 0, gifW, gifH);
+    }
+  }
+
+  // Compute bounding box of actual content across all frames
+  let minX = gifW, minY = gifH, maxX = 0, maxY = 0;
+  for (const { canvas: c } of composited) {
+    const d = c.getContext('2d').getImageData(0, 0, gifW, gifH).data;
+    for (let y = 0; y < gifH; y++) for (let x = 0; x < gifW; x++) {
+      if (d[(y * gifW + x) * 4 + 3] > 0) {
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+    }
+  }
+  // Fallback to full canvas if nothing found
+  if (maxX <= minX || maxY <= minY) { minX = 0; minY = 0; maxX = gifW - 1; maxY = gifH - 1; }
+  const contentW = maxX - minX + 1, contentH = maxY - minY + 1;
+
+  // Total GIF duration
+  const totalMs = composited.reduce((s, f) => s + f.durationMs, 0);
+  const totalOut = Math.max(1, Math.round(totalMs / 1000 * targetFps));
+  const msPerOut = totalMs / totalOut;
+
+  for (let i = 0; i < totalOut; i++) {
+    setProgress(15 + Math.round((i / totalOut) * 80), `生成帧 ${i+1} / ${totalOut}`);
+    await yieldFrame();
+
+    const t = i * msPerOut;
+    let acc = 0, srcFrame = composited[composited.length - 1];
+    for (const cf of composited) {
+      if (t < acc + cf.durationMs) { srcFrame = cf; break; }
+      acc += cf.durationMs;
+    }
+
+    const pad = 20;
+    const { canvas, ctx, dx, dy, dw, dh } = makeOutputCanvas(contentW + pad*2, contentH + pad*2, true);
+    // Draw content with 20px padding on all sides
+    ctx.drawImage(srcFrame.canvas, minX, minY, contentW, contentH, dx + pad, dy + pad, dw - pad*2, dh - pad*2);
+    extractedFrames.push({ dataUrl: canvas.toDataURL('image/png'), name: `frame_${String(i+1).padStart(4,'0')}.png` });
+  }
+  setProgress(100, `完成！共 ${totalOut} 帧（${targetFps}fps）`);
+}
+
+// ─── MP4 extraction ───────────────────────────────────────────────────────────
+async function extractMp4() {
+  const setP = (p, m) => { progressFillV.style.width = p+'%'; progressTextV.textContent = m; };
+  setP(5, '加载视频...');
+  const fps = Math.max(1, Math.min(60, parseInt(document.getElementById('videoFpsV').value) || 10));
+  const url = URL.createObjectURL(currentFileV);
+
+  const video = document.createElement('video');
+  video.src = url; video.muted = true; video.preload = 'auto';
+  await new Promise((res, rej) => {
+    video.onloadedmetadata = res;
+    video.onerror = () => rej(new Error('视频加载失败'));
+  });
+
+  const duration = video.duration;
+  const total = Math.floor(duration * fps);
+  const vw = video.videoWidth, vh = video.videoHeight;
+
+  setP(10, `视频时长 ${duration.toFixed(1)}s，预计 ${total} 帧`);
+
+  for (let i = 0; i < total; i++) {
+    video.currentTime = i / fps;
+    await new Promise(res => { video.onseeked = res; });
+    await yieldFrame();
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 500;
+    canvas.height = 500;
+    const ctx = canvas.getContext('2d');
+
+    // 按照安卓目标比例居中裁切视频，然后绘制到 500x500 画布中心
+    let sw, sh, sx, sy;
+    if (targetAndroidRatio) {
+      // 计算裁切区域（居中）
+      if (vw / vh > targetAndroidRatio) {
+        sh = vh; sw = Math.round(vh * targetAndroidRatio);
+      } else {
+        sw = vw; sh = Math.round(vw / targetAndroidRatio);
+      }
+      sx = Math.floor((vw - sw) / 2);
+      sy = Math.floor((vh - sh) / 2);
+
+      // 计算绘制到 500x500 画布的尺寸（保持比例，居中）
+      const scale = Math.min(500 / sw, 500 / sh);
+      const dw = sw * scale;
+      const dh = sh * scale;
+      const dx = (500 - dw) / 2;
+      const dy = (500 - dh) / 2;
+
+      ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh);
+    } else {
+      // 兜底：直接缩放到 500x500
+      const scale = Math.min(500 / vw, 500 / vh);
+      const dw = vw * scale;
+      const dh = vh * scale;
+      const dx = (500 - dw) / 2;
+      const dy = (500 - dh) / 2;
+      ctx.drawImage(video, dx, dy, dw, dh);
+    }
+
+    extractedFramesV.push({ dataUrl: canvas.toDataURL('image/png'), name: `frame_${String(i+1).padStart(4,'0')}.png` });
+    setP(10 + Math.round((i / total) * 88), `提取帧 ${i+1} / ${total}`);
+  }
+
+  URL.revokeObjectURL(url);
+  setP(100, `完成！共 ${total} 帧`);
+}
+
+// ─── Results ──────────────────────────────────────────────────────────────────
+btnExtractV.addEventListener('click', async () => {
+  if (!currentFileV) return;
+  btnExtractV.disabled = true;
+  progressWrapV.style.display = 'block';
+  progressFillV.style.width = '0%';
+  progressTextV.textContent = '准备中...';
+  extractedFramesV = [];
+  framesGridV.innerHTML = '';
+  resultsSectionV.style.display = 'none';
+
+  try {
+    await extractMp4();
+    showResultsV();
+  } catch(e) {
+    alert('提取失败：' + e.message);
+    console.error(e);
+  } finally {
+    btnExtractV.disabled = false;
+  }
+});
+
+function showResultsV() {
+  let totalBytes = 0;
+  extractedFramesV.forEach(f => {
+    const base64 = f.dataUrl.split(',')[1];
+    totalBytes += Math.round(base64.length * 3 / 4);
+  });
+  const sizeStr = totalBytes >= 1024*1024
+    ? (totalBytes/1024/1024).toFixed(2) + ' MB'
+    : (totalBytes/1024).toFixed(1) + ' KB';
+  resultsTitleV.innerHTML = `提取完成 — 共 ${extractedFramesV.length} 帧 <span style="font-size:0.85em;color:#64748b;font-weight:500;margin-left:8px;">总计 ${sizeStr}</span>`;
+  framesGridV.innerHTML = '';
+  extractedFramesV.forEach((f, i) => {
+    const div = document.createElement('div');
+    div.className = 'frame-item';
+    div.title = `点击下载 ${f.name}`;
+    div.innerHTML = `<img src="${f.dataUrl}" loading="lazy"><span class="frame-num">${i+1}</span>`;
+    div.addEventListener('click', () => { const a = document.createElement('a'); a.href = f.dataUrl; a.download = f.name; a.click(); });
+    framesGridV.appendChild(div);
+  });
+  resultsSectionV.style.display = 'block';
+  btnDownloadTemplateV.style.display = 'inline-block';
+  resultsSectionV.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function showResults() {
+  // 计算所有帧图片的总大小
+  let totalBytes = 0;
+  extractedFrames.forEach(f => {
+    // dataUrl 格式: data:image/png;base64,XXXX...
+    const base64 = f.dataUrl.split(',')[1];
+    totalBytes += Math.round(base64.length * 3 / 4);
+  });
+  let sizeStr;
+  if (totalBytes >= 1024 * 1024) {
+    sizeStr = (totalBytes / 1024 / 1024).toFixed(2) + ' MB';
+  } else {
+    sizeStr = (totalBytes / 1024).toFixed(1) + ' KB';
+  }
+  resultsTitle.textContent = `提取完成 — 共 ${extractedFrames.length} 帧`;
+  resultsTitle.innerHTML = `提取完成 — 共 ${extractedFrames.length} 帧 <span style="font-size:0.85em;color:#64748b;font-weight:500;margin-left:8px;">总计 ${sizeStr}</span>`;
+  framesGrid.innerHTML = '';
+  extractedFrames.forEach((f, i) => {
+    const div = document.createElement('div');
+    div.className = 'frame-item';
+    div.title = `点击下载 ${f.name}`;
+    div.innerHTML = `<img src="${f.dataUrl}" loading="lazy"><span class="frame-num">${i+1}</span>`;
+    div.addEventListener('click', () => downloadOne(f));
+    framesGrid.appendChild(div);
+  });
+  resultsSection.style.display = 'block';
+  resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function downloadOne(f) {
+  const a = document.createElement('a');
+  a.href = f.dataUrl; a.download = f.name; a.click();
+}
+
+btnDownloadAll.addEventListener('click', async () => {
+  if (!extractedFrames.length) return;
+  btnDownloadAll.textContent = '打包中...';
+  btnDownloadAll.disabled = true;
+  try {
+    const zip = new JSZip();
+    extractedFrames.forEach(f => { zip.file(f.name, f.dataUrl.split(',')[1], { base64: true }); });
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'frames.zip'; a.click();
+  } finally {
+    btnDownloadAll.textContent = '⬇ 打包下载全部序列帧';
+    btnDownloadAll.disabled = false;
+  }
+});
+
+// ─── GIF 模板包替换下载 ──────────────────────────────────────────────────────
+let currentMusicFile = null;
+const musicInput = document.getElementById('musicInput');
+const musicName = document.getElementById('musicName');
+const musicClear = document.getElementById('musicClear');
+
+musicInput.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  currentMusicFile = f;
+  musicName.textContent = f.name;
+  musicClear.style.display = 'inline-block';
+});
+musicClear.addEventListener('click', () => {
+  currentMusicFile = null;
+  musicInput.value = '';
+  musicName.textContent = '';
+  musicClear.style.display = 'none';
+});
+
+const btnDownloadTemplate = document.getElementById('btnDownloadTemplate');
+btnDownloadTemplate.addEventListener('click', async () => {
+  if (!extractedFrames.length) return;
+  btnDownloadTemplate.textContent = '替换打包中...';
+  btnDownloadTemplate.disabled = true;
+  try {
+    const tplFile = currentMusicFile ? 'gif_template_music.zip' : 'gif_template.zip';
+    const resp = await fetch(tplFile);
+    if (!resp.ok) throw new Error(`模板包加载失败，请确认 ${tplFile} 在同目录下`);
+    const tplBuf = await resp.arrayBuffer();
+    const zip = await JSZip.loadAsync(tplBuf);
+
+    // 生成时间戳文件夹名 YYMMDDHHMMSS
+    const now = new Date();
+    const ts = String(now.getFullYear()).slice(2)
+      + String(now.getMonth() + 1).padStart(2, '0')
+      + String(now.getDate()).padStart(2, '0')
+      + String(now.getHours()).padStart(2, '0')
+      + String(now.getMinutes()).padStart(2, '0')
+      + String(now.getSeconds()).padStart(2, '0');
+
+    // 将 ios/ 或 ios-带音乐/ 文件夹重命名为时间戳
+    const oldIosPrefix = currentMusicFile ? 'ios-带音乐/' : 'ios/';
+    const newIosPrefix = ts + '/';
+    const androidPrefix = currentMusicFile ? '安卓-带音乐/' : '安卓/';
+    const entries = Object.entries(zip.files);
+    for (const [path, entry] of entries) {
+      if (path.startsWith(oldIosPrefix)) {
+        const newPath = newIosPrefix + path.slice(oldIosPrefix.length);
+        if (!entry.dir) {
+          const content = await entry.async('uint8array');
+          zip.file(newPath, content);
+        } else {
+          zip.folder(newPath);
+        }
+        zip.remove(path);
+      }
+    }
+
+    // iOS 序列帧路径（已重命名）
+    const iosDir = newIosPrefix + 'model/序列帧-0-0-第一层图形/';
+    // 安卓序列帧路径
+    const androidDir = androidPrefix + '序列帧/第一层图形/';
+
+    // 删除旧序列帧
+    Object.keys(zip.files).forEach(path => {
+      if ((path.startsWith(iosDir) || path.startsWith(androidDir)) && path.endsWith('.png')) {
+        zip.remove(path);
+      }
+    });
+
+    // 写入新序列帧到两个目录
+    extractedFrames.forEach((f, i) => {
+      const fname = `gif_${String(i + 1).padStart(5, '0')}.png`;
+      const b64 = f.dataUrl.split(',')[1];
+      zip.file(iosDir + fname, b64, { base64: true });
+      zip.file(androidDir + fname, b64, { base64: true });
+    });
+
+    // 替换音乐文件（带音乐版本）
+    if (currentMusicFile) {
+      const musicBuf = await currentMusicFile.arrayBuffer();
+      zip.file(newIosPrefix + 'music/music.mp3', musicBuf);
+      zip.file(androidPrefix + '音乐/music.mp3', musicBuf);
+    }
+
+    // 分别打包成两个 ZIP
+    // 1. 时间戳.zip — 直接压缩时间戳文件夹
+    const iosZip = new JSZip();
+    for (const [path, entry] of Object.entries(zip.files)) {
+      if (path.startsWith(newIosPrefix) && !entry.dir) {
+        iosZip.file(path, await entry.async('uint8array'));
+      }
+    }
+    const iosBlob = await iosZip.generateAsync({ type: 'blob' });
+
+    // 2. 安卓.zip — 去掉外层 安卓/ 前缀
+    const androidZip = new JSZip();
+    for (const [path, entry] of Object.entries(zip.files)) {
+      if (path.startsWith(androidPrefix) && !entry.dir) {
+        androidZip.file(path.slice(androidPrefix.length), await entry.async('uint8array'));
+      }
+    }
+    const androidBlob = await androidZip.generateAsync({ type: 'blob' });
+
+    // 分开下载两个 zip
+    const a1 = document.createElement('a');
+    a1.href = URL.createObjectURL(iosBlob);
+    a1.download = ts + '.zip';
+    a1.click();
+
+    setTimeout(() => {
+      const a2 = document.createElement('a');
+      a2.href = URL.createObjectURL(androidBlob);
+      a2.download = '安卓.zip';
+      a2.click();
+    }, 500);
+  } catch(e) {
+    alert('替换失败：' + e.message);
+    console.error(e);
+  } finally {
+    btnDownloadTemplate.textContent = '📦 下载替换后的模板包';
+    btnDownloadTemplate.disabled = false;
+  }
+});
+
+btnDownloadAllV.addEventListener('click', async () => {
+  if (!extractedFramesV.length) return;
+  btnDownloadAllV.textContent = '打包中...';
+  btnDownloadAllV.disabled = true;
+  try {
+    const zip = new JSZip();
+    extractedFramesV.forEach(f => { zip.file(f.name, f.dataUrl.split(',')[1], { base64: true }); });
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'frames.zip'; a.click();
+  } finally {
+    btnDownloadAllV.textContent = '⬇ 打包下载全部';
+    btnDownloadAllV.disabled = false;
+  }
+});
+
+// ─── MP4 模板包替换下载 ──────────────────────────────────────────────────────
+btnDownloadTemplateV.addEventListener('click', async () => {
+  if (!extractedFramesV.length || !currentFileV) return;
+  btnDownloadTemplateV.textContent = '视频处理中... 0%';
+  btnDownloadTemplateV.disabled = true;
+  try {
+    // 获取视频尺寸，判断最接近的比例
+    const video = document.createElement('video');
+    video.src = URL.createObjectURL(currentFileV);
+    await new Promise(resolve => { video.onloadedmetadata = resolve; });
+    const videoRatio = video.videoWidth / video.videoHeight;
+    URL.revokeObjectURL(video.src);
+
+    // 定义可用比例及其数值
+    const ratios = [
+      { name: '1比1', value: 1/1 },
+      { name: '16比9', value: 16/9 },
+      { name: '2比3', value: 2/3 },
+      { name: '3比2', value: 3/2 },
+      { name: '9比16', value: 9/16 }
+    ];
+
+    // 找到最接近的比例
+    let closestRatio = ratios[0];
+    let minDiff = Math.abs(videoRatio - ratios[0].value);
+    for (let i = 1; i < ratios.length; i++) {
+      const diff = Math.abs(videoRatio - ratios[i].value);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestRatio = ratios[i];
+      }
+    }
+
+    const androidTemplateFile = `mp4_template_android_${closestRatio.name}.zip`;
+
+    const resp = await fetch('mp4_template.zip');
+    if (!resp.ok) throw new Error('模板包加载失败，请确认 mp4_template.zip 在同目录下');
+    const tplBuf = await resp.arrayBuffer();
+
+    // 加载安卓比例模板
+    const respAndroid = await fetch(androidTemplateFile);
+    if (!respAndroid.ok) throw new Error(`安卓模板包加载失败，请确认 ${androidTemplateFile} 在同目录下`);
+    const androidTplBuf = await respAndroid.arrayBuffer();
+
+    const zipRaw = await JSZip.loadAsync(tplBuf);
+    // 统一路径分隔符为���斜杠，跳过目录条目（文件会自动创建目录）
+    const zip = new JSZip();
+    for (const [path, entry] of Object.entries(zipRaw.files)) {
+      if (entry.dir) continue;
+      zip.file(path.replace(/\\/g, '/'), await entry.async('uint8array'));
+    }
+
+    // 时间戳
+    const now = new Date();
+    const ts = String(now.getFullYear()).slice(2)
+      + String(now.getMonth()+1).padStart(2,'0')
+      + String(now.getDate()).padStart(2,'0')
+      + String(now.getHours()).padStart(2,'0')
+      + String(now.getMinutes()).padStart(2,'0')
+      + String(now.getSeconds()).padStart(2,'0');
+
+    const iosPrefix = 'ios/';
+    const newIosPrefix = ts + '/';
+
+    // 重命名 ios/ → 时间戳/
+    for (const [path, entry] of Object.entries(zip.files)) {
+      if (path.startsWith(iosPrefix)) {
+        const newPath = newIosPrefix + path.slice(iosPrefix.length);
+        if (!entry.dir) zip.file(newPath, await entry.async('uint8array'));
+        zip.remove(path);
+      }
+    }
+
+    // 删除旧序列帧
+    const iosFrameDir = newIosPrefix + 'model/序列帧-0-0-第一层图形/';
+    Object.keys(zip.files).forEach(p => {
+      if (p.startsWith(iosFrameDir) && p.endsWith('.png')) zip.remove(p);
+    });
+
+    // 写入新序列帧
+    extractedFramesV.forEach((f, i) => {
+      const fname = 'gif_' + String(i+1).padStart(5,'0') + '.png';
+      zip.file(iosFrameDir + fname, f.dataUrl.split(',')[1], { base64: true });
+    });
+
+    // 从上传的 MP4 提取音频转 MP3，替换 ios/music/music.mp3
+    const mp3Blob = await extractMp3FromVideo(currentFileV);
+    zip.file(newIosPrefix + 'music/music.mp3', await mp3Blob.arrayBuffer());
+
+    // 打包 iOS zip
+    const iosZip = new JSZip();
+    for (const [path, entry] of Object.entries(zip.files)) {
+      if (path.startsWith(newIosPrefix) && !entry.dir)
+        iosZip.file(path, await entry.async('uint8array'));
+    }
+    const iosBlob = await iosZip.generateAsync({ type: 'blob' });
+
+    // 处理安卓模板：加载选中比例的模板，替换视频
+    const androidZipRaw = await JSZip.loadAsync(androidTplBuf);
+    const androidZip = new JSZip();
+    for (const [path, entry] of Object.entries(androidZipRaw.files)) {
+      if (entry.dir) continue;
+      const normalizedPath = path.replace(/\\/g, '/');
+      // 如果是 Video.mp4，居中裁切后替换
+      if (/Video\.mp4$/i.test(normalizedPath)) {
+        const croppedBlob = await cropVideoToRatio(currentFileV, closestRatio.value, pct => {
+          btnDownloadTemplateV.textContent = `视频处理中... ${pct}%`;
+        });
+        androidZip.file(normalizedPath, await croppedBlob.arrayBuffer());
+      } else {
+        androidZip.file(normalizedPath, await entry.async('uint8array'));
+      }
+    }
+    const androidBlob = await androidZip.generateAsync({ type: 'blob' });
+
+    // 分开下载两个 zip
+    const a1 = document.createElement('a');
+    a1.href = URL.createObjectURL(iosBlob);
+    a1.download = ts + '.zip';
+    a1.click();
+
+    setTimeout(() => {
+      const a2 = document.createElement('a');
+      a2.href = URL.createObjectURL(androidBlob);
+      a2.download = '安卓.zip';
+      a2.click();
+    }, 500);
+  } catch(e) {
+    alert('替换失败：' + e.message);
+    console.error(e);
+  } finally {
+    btnDownloadTemplateV.textContent = '📦 下载替换后的模板包';
+    btnDownloadTemplateV.disabled = false;
+  }
+});
+
+// 居中裁切视频到目标宽高比，返回 MP4 Blob（ffmpeg.wasm）
+async function cropVideoToRatio(file, targetRatio, onProgress) {
+  // 获取视频尺寸
+  const vw = await new Promise(resolve => {
+    const v = document.createElement('video');
+    v.src = URL.createObjectURL(file);
+    v.onloadedmetadata = () => { URL.revokeObjectURL(v.src); resolve({ w: v.videoWidth, h: v.videoHeight }); };
+  }).then(d => d);
+
+  let sw, sh;
+  if (vw.w / vw.h > targetRatio) {
+    sh = vw.h; sw = Math.round(vw.h * targetRatio);
+  } else {
+    sw = vw.w; sh = Math.round(vw.w / targetRatio);
+  }
+  // 确保偶数（libx264 要求）
+  sw = sw % 2 === 0 ? sw : sw - 1;
+  sh = sh % 2 === 0 ? sh : sh - 1;
+  const sx = Math.floor((vw.w - sw) / 2);
+  const sy = Math.floor((vw.h - sh) / 2);
+
+  const { FFmpeg } = FFmpegWASM;
+  const { fetchFile } = FFmpegUtil;
+  const ffmpeg = new FFmpeg();
+  if (onProgress) ffmpeg.on('progress', ({ progress }) => onProgress(Math.round(progress * 100)));
+  await ffmpeg.load({
+    coreURL: '/ffmpeg-core.js',
+    wasmURL: '/ffmpeg-core.wasm',
+    workerURL: '/ffmpeg-core.worker.js',
+  });
+
+  await ffmpeg.writeFile('input.mp4', await fetchFile(file));
+  await ffmpeg.exec([
+    '-i', 'input.mp4',
+    '-vf', `crop=${sw}:${sh}:${sx}:${sy}`,
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+    '-c:a', 'aac',
+    '-movflags', '+faststart',
+    'output.mp4'
+  ]);
+  const data = await ffmpeg.readFile('output.mp4');
+  return new Blob([data.buffer], { type: 'video/mp4' });
+}
+
+async function extractMp3FromVideo(file) {
+  const arrayBuf = await file.arrayBuffer();
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
+  audioCtx.close();
+  const sr = audioBuf.sampleRate, numCh = audioBuf.numberOfChannels, samples = audioBuf.length;
+  function floatTo16(arr) {
+    const out = new Int16Array(arr.length);
+    for (let i=0;i<arr.length;i++) { let s=Math.max(-1,Math.min(1,arr[i])); out[i]=s<0?s*0x8000:s*0x7FFF; }
+    return out;
+  }
+  if (typeof lamejs !== 'undefined') {
+    const enc = new lamejs.Mp3Encoder(numCh, sr, 192);
+    const left = floatTo16(audioBuf.getChannelData(0));
+    const right = numCh > 1 ? floatTo16(audioBuf.getChannelData(1)) : left;
+    const mp3Data = [];
+    const block = 1152;
+    for (let i=0;i<samples;i+=block) {
+      const buf = numCh>1 ? enc.encodeBuffer(left.subarray(i,i+block), right.subarray(i,i+block))
+                          : enc.encodeBuffer(left.subarray(i,i+block));
+      if (buf.length>0) mp3Data.push(buf);
+    }
+    const end = enc.flush();
+    if (end.length>0) mp3Data.push(end);
+    return new Blob(mp3Data, { type: 'audio/mp3' });
+  } else {
+    return new Blob([encodeWAV(audioBuf)], { type: 'audio/wav' });
+  }
+}
+
+// ─── MP3 Audio Extraction ────────────────────────────────────────────────────
+btnDownloadMp3.addEventListener('click', async () => {
+  if (!currentFileV) return;
+  btnDownloadMp3.textContent = '提取音频中...';
+  btnDownloadMp3.disabled = true;
+
+  try {
+    const arrayBuf = await currentFileV.arrayBuffer();
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
+    audioCtx.close();
+
+    const sampleRate = audioBuf.sampleRate;
+    const numChannels = audioBuf.numberOfChannels;
+    const samples = audioBuf.length;
+
+    // 获取音频数据（转为 Int16）
+    function floatTo16(float32Arr) {
+      const int16 = new Int16Array(float32Arr.length);
+      for (let i = 0; i < float32Arr.length; i++) {
+        let s = Math.max(-1, Math.min(1, float32Arr[i]));
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return int16;
+    }
+
+    // 尝试使用 lamejs 编码 MP3
+    if (typeof lamejs !== 'undefined') {
+      const mp3encoder = new lamejs.Mp3Encoder(numChannels, sampleRate, 192);
+      const mp3Data = [];
+
+      const left = floatTo16(audioBuf.getChannelData(0));
+      const right = numChannels > 1 ? floatTo16(audioBuf.getChannelData(1)) : left;
+
+      const blockSize = 1152;
+      for (let i = 0; i < samples; i += blockSize) {
+        const leftChunk = left.subarray(i, i + blockSize);
+        const rightChunk = right.subarray(i, i + blockSize);
+        const mp3buf = numChannels > 1
+          ? mp3encoder.encodeBuffer(leftChunk, rightChunk)
+          : mp3encoder.encodeBuffer(leftChunk);
+        if (mp3buf.length > 0) mp3Data.push(mp3buf);
+      }
+      const end = mp3encoder.flush();
+      if (end.length > 0) mp3Data.push(end);
+
+      const blob = new Blob(mp3Data, { type: 'audio/mp3' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      const baseName = currentFile.name.replace(/\.[^.]+$/, '');
+      a.download = baseName + '.mp3';
+      a.click();
+    } else {
+      // fallback: 导出 WAV
+      const wavBuf = encodeWAV(audioBuf);
+      const blob = new Blob([wavBuf], { type: 'audio/wav' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      const baseName = currentFile.name.replace(/\.[^.]+$/, '');
+      a.download = baseName + '.wav';
+      a.click();
+    }
+  } catch(e) {
+    alert('音频提取失败：' + e.message);
+    console.error(e);
+  } finally {
+    btnDownloadMp3.textContent = '🎵 下载 MP3 音频';
+    btnDownloadMp3.disabled = false;
+  }
+});
+
+// WAV 编码 fallback
+function encodeWAV(audioBuf) {
+  const numCh = audioBuf.numberOfChannels;
+  const sr = audioBuf.sampleRate;
+  const len = audioBuf.length;
+  const buffer = new ArrayBuffer(44 + len * numCh * 2);
+  const view = new DataView(buffer);
+
+  function writeStr(offset, str) { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); }
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + len * numCh * 2, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numCh, true);
+  view.setUint32(24, sr, true);
+  view.setUint32(28, sr * numCh * 2, true);
+  view.setUint16(32, numCh * 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, 'data');
+  view.setUint32(40, len * numCh * 2, true);
+
+  let offset = 44;
+  for (let i = 0; i < len; i++) {
+    for (let ch = 0; ch < numCh; ch++) {
+      let s = Math.max(-1, Math.min(1, audioBuf.getChannelData(ch)[i]));
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      offset += 2;
+    }
+  }
+  return buffer;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+    const names = ['gif', 'video', 'model'];
+    btn.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.tab-panel').forEach(p => {
+    p.classList.toggle('active', p.id === 'tab-' + name);
+  });
+}
+function setProgress(pct, msg) {
+  progressFill.style.width = pct + '%';
+  progressText.textContent = msg;
+}
+function yieldFrame() {
+  return new Promise(r => requestAnimationFrame(r));
+}
+
+// ─── 3D Model Viewer (initialized from module script below) ──────────────────
+let _loadModelFn = null;
+function loadModel(file) { if (_loadModelFn) _loadModelFn(file); }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+let modelRenderer = null, modelAnimId = null;
+
+const uploadZoneM = document.getElementById('uploadZoneM');
+const fileInputM = document.getElementById('fileInputM');
+uploadZoneM.addEventListener('click', () => fileInputM.click());
+fileInputM.addEventListener('change', e => doLoadFiles(e.target.files));
+uploadZoneM.addEventListener('dragover', e => { e.preventDefault(); uploadZoneM.classList.add('drag-over'); });
+uploadZoneM.addEventListener('dragleave', () => uploadZoneM.classList.remove('drag-over'));
+uploadZoneM.addEventListener('drop', e => { e.preventDefault(); uploadZoneM.classList.remove('drag-over'); doLoadFiles(e.dataTransfer.files); });
+
+window._loadModelFn = f => doLoadFiles([f]);
+
+function doLoadFiles(files) {
+  const arr = Array.from(files);
+  const zipFile = arr.find(f => /\.zip$/i.test(f.name));
+
+  if (zipFile) {
+    // 解压 ZIP，提取模型和贴图
+    zipFile.arrayBuffer().then(buf => {
+      JSZip.loadAsync(buf).then(zip => {
+        const entries = Object.values(zip.files).filter(f => !f.dir);
+        const modelEntry = entries.find(f => /\.(glb|gltf|dae)$/i.test(f.name));
+        if (!modelEntry) { alert('ZIP 中未找到 GLB/DAE 文件'); return; }
+
+        const texPromises = {};
+        entries.forEach(entry => {
+          if (/\.(png|jpe?g|webp|bmp|tga)$/i.test(entry.name)) {
+            const fname = entry.name.split('/').pop();
+            texPromises[fname] = entry.async('blob').then(b => URL.createObjectURL(b));
+          }
+        });
+
+        Promise.all([
+          modelEntry.async('blob'),
+          Promise.all(Object.entries(texPromises).map(([k, p]) => p.then(v => [k, v])))
+        ]).then(([modelBlob, texEntries]) => {
+          const texMap = Object.fromEntries(texEntries);
+          const ext = modelEntry.name.split('.').pop();
+          const modelFile = new File([modelBlob], modelEntry.name.split('/').pop(), { type: 'application/octet-stream' });
+          doLoadModel(modelFile, texMap);
+        });
+      });
+    });
+    return;
+  }
+
+  const modelFile = arr.find(f => /\.(glb|gltf|dae)$/i.test(f.name));
+  if (!modelFile) { alert('请选择 GLB、DAE 文件或包含模型的 ZIP'); return; }
+  const texMap = {};
+  arr.forEach(f => { if (!/\.(glb|gltf|dae)$/i.test(f.name)) texMap[f.name] = URL.createObjectURL(f); });
+  doLoadModel(modelFile, texMap);
+}
+
+function doLoadModel(file, texMap = {}) {
+  const isGlb = /\.(glb|gltf)$/i.test(file.name);
+  const isDae = /\.dae$/i.test(file.name);
+  if (!isGlb && !isDae) { alert('请选择 GLB 或 DAE 文件'); return; }
+
+  document.getElementById('modelViewerCard').style.display = 'block';
+  const container = document.getElementById('modelCanvas');
+  container.innerHTML = '';
+
+  if (modelAnimId) cancelAnimationFrame(modelAnimId);
+  if (modelRenderer) { modelRenderer.dispose(); modelRenderer = null; }
+
+  const w = container.clientWidth, h = container.clientHeight || 480;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1a2e);
+
+  const camera = new THREE.PerspectiveCamera(45, w / h, 0.001, 10000);
+  modelRenderer = new THREE.WebGLRenderer({ antialias: true });
+  modelRenderer.setSize(w, h);
+  modelRenderer.setPixelRatio(window.devicePixelRatio);
+  container.appendChild(modelRenderer.domElement);
+
+  const controls = new OrbitControls(camera, modelRenderer.domElement);
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 2.0;
+  controls.enableDamping = true;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+  dir.position.set(5, 10, 7);
+  scene.add(dir);
+
+  const url = URL.createObjectURL(file);
+  const onLoad = (obj) => {
+    const model = obj.scene;
+    const box = new THREE.Box3().setFromObject(model);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    model.position.sub(center);
+    // 双面渲染，避免背面不可见
+    model.traverse(child => {
+      if (child.isMesh && child.material) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach(m => { m.side = THREE.DoubleSide; });
+      }
+    });
+    camera.position.set(0, maxDim * 0.4, maxDim * 2.2);
+    controls.target.set(0, 0, 0);
+    controls.update();
+    scene.add(model);
+    URL.revokeObjectURL(url);
+    const animate = () => {
+      modelAnimId = requestAnimationFrame(animate);
+      controls.update();
+      modelRenderer.render(scene, camera);
+    };
+    animate();
+  };
+
+  const onErr = e => alert('加载失败：' + (e.message || e));
+  if (isGlb) {
+    new GLTFLoader().load(url, onLoad, undefined, onErr);
+  } else {
+    // 用 LoadingManager 将贴图文件名重定向到 blob URL
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier(reqUrl => {
+      const fname = reqUrl.split('/').pop().split('\\').pop();
+      return texMap[fname] || reqUrl;
+    });
+    new ColladaLoader(manager).load(url, onLoad, undefined, onErr);
+  }
+}
+</script>
+</body>
+</html>

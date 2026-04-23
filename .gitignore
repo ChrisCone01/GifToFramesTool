@@ -1,0 +1,9 @@
+# Chrome plugin (not needed for web deployment)
+chrome-plugin/
+
+# Local server scripts
+router.php
+server.py
+启动工具.bat
+启动工具.command
+.claude/
