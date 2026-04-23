@@ -384,7 +384,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
-<script src="/ffmpeg.js"></script>
+<script src="ffmpeg.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
 <script type="importmap">
 {
@@ -1357,9 +1357,9 @@ async function cropVideoToRatio(file, targetRatio, onProgress) {
   const ffmpeg = new FFmpeg();
   if (onProgress) ffmpeg.on('progress', ({ progress }) => onProgress(Math.round(progress * 100)));
   await ffmpeg.load({
-    coreURL: '/ffmpeg-core.js',
-    wasmURL: '/ffmpeg-core.wasm',
-    workerURL: '/ffmpeg-core.worker.js',
+    coreURL: 'ffmpeg-core.js',
+    wasmURL: 'ffmpeg-core.wasm',
+    workerURL: 'ffmpeg-core.worker.js',
   });
 
   await ffmpeg.writeFile('input.mp4', await fetchFile(file));
